@@ -17,7 +17,8 @@ models:
       - name: ACCOUNT_STATUS
         tests:
           - accepted_values:
-              values: ['ACTIVE', 'INACTIVE', 'CLOSED']
+              arguments:
+                values: ['ACTIVE', 'INACTIVE', 'CLOSED']
 
   - name: stg_legal_cases
     columns:
@@ -28,7 +29,8 @@ models:
       - name: CASE_STATUS
         tests:
           - accepted_values:
-              values: ['OPEN', 'CLOSED', 'PENDING']
+              arguments:
+                values: ['OPEN', 'CLOSED', 'PENDING']
 
   - name: stg_payments
     columns:
@@ -39,4 +41,5 @@ models:
       - name: PAYMENT_STATUS
         tests:
           - accepted_values:
-              values: ['SUCCESS', 'FAILED', 'PENDING']
+              arguments:
+                values: ['SUCCESS', 'FAILED', 'PENDING']

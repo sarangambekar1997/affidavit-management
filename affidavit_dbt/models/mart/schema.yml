@@ -10,8 +10,10 @@ models:
       - name: ACCOUNT_STATUS
         tests:
           - accepted_values:
-              values: ['ACTIVE']
+              arguments:
+                values: ['ACTIVE']
       - name: CASE_STATUS
         tests:
           - accepted_values:
-              values: ['OPEN']
+              arguments:
+                values: ['OPEN']
