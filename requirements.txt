@@ -1,0 +1,8 @@
+# dbt transformation layer
+dbt-core==1.12.3
+dbt-snowflake==1.10.8
+
+# ingestion script (ingest.py)
+snowflake-connector-python>=3.0.0,<4.0.0
+psycopg2-binary>=2.9
+PyYAML>=6.0
