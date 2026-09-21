@@ -66,7 +66,7 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-dbt-core==1.12.3 dbt-snowflake==1.10.8}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-dbt-core==1.12.3 dbt-snowflake==1.10.8 psycopg2-binary}
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
@@ -284,5 +284,25 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  source_postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: source_user
+      POSTGRES_PASSWORD: source_pass
+      POSTGRES_DB: source_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init_sql:/docker-entrypoint-initdb.d
+      - source-postgres-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "source_user", "-d", "source_db"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+
 volumes:
   postgres-db-volume:
+  source-postgres-volume:
