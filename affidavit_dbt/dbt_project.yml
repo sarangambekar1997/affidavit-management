@@ -18,8 +18,10 @@ models:
   affidavit_dbt:
     staging:
       +schema: STAGING
-      +materialized: table
+      +materialized: view
+      +tags: ["staging"]
 
     mart:
       +schema: MART
       +materialized: table
+      +tags: ["mart", "affidavit"]
