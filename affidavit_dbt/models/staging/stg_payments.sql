@@ -1,0 +1,7 @@
+SELECT
+    PAYMENT_ID,
+    ACCOUNT_ID,
+    PAYMENT_DATE,
+    PAYMENT_AMOUNT,
+    UPPER(TRIM(PAYMENT_STATUS)) AS PAYMENT_STATUS
+FROM {{ source('raw', 'payments') }}

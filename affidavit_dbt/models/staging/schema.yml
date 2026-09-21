@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_customers
+    columns:
+      - name: CUSTOMER_ID
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_accounts
+    columns:
+      - name: ACCOUNT_ID
+        tests:
+          - unique
+          - not_null
+      - name: ACCOUNT_STATUS
+        tests:
+          - accepted_values:
+              values: ['ACTIVE', 'INACTIVE', 'CLOSED']
+
+  - name: stg_legal_cases
+    columns:
+      - name: CASE_ID
+        tests:
+          - unique
+          - not_null
+      - name: CASE_STATUS
+        tests:
+          - accepted_values:
+              values: ['OPEN', 'CLOSED', 'PENDING']
+
+  - name: stg_payments
+    columns:
+      - name: PAYMENT_ID
+        tests:
+          - unique
+          - not_null
+      - name: PAYMENT_STATUS
+        tests:
+          - accepted_values:
+              values: ['SUCCESS', 'FAILED', 'PENDING']

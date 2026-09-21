@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: raw
+    database: AFFIDAVIT_POC
+    schema: RAW
+    tables:
+      - name: customers
+      - name: accounts
+      - name: legal_cases
+      - name: payments

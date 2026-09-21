@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: affidavit_candidates
+    columns:
+      - name: ACCOUNT_ID
+        tests:
+          - unique
+          - not_null
+      - name: ACCOUNT_STATUS
+        tests:
+          - accepted_values:
+              values: ['ACTIVE']
+      - name: CASE_STATUS
+        tests:
+          - accepted_values:
+              values: ['OPEN']
