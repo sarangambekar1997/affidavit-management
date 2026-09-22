@@ -33,4 +33,4 @@ models:
         tests:
           - accepted_values:
               arguments:
-                values: ['COMPLETED', 'PENDING', 'FAILED']
+                values: ['SUCCESS', 'PENDING', 'FAILED']
