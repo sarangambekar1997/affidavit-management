@@ -1,6 +1,10 @@
 # Python virtual environment
 .venv/
 
+# dbt installed packages and compiled output
+affidavit_dbt/dbt_packages/
+affidavit_dbt/target/
+
 # Logs
 logs/
 
