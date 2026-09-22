@@ -2,6 +2,7 @@ version: 2
 
 models:
   - name: affidavit_candidates
+    description: "Accounts eligible for affidavit processing: ACTIVE status, balance > $1000, OPEN legal case."
     columns:
       - name: ACCOUNT_ID
         tests:
@@ -17,3 +18,19 @@ models:
           - accepted_values:
               arguments:
                 values: ['OPEN']
+
+  - name: fct_payments
+    description: "Incremental payments fact table. Merges only new records on each run using LOADED_AT as the watermark."
+    columns:
+      - name: PAYMENT_ID
+        tests:
+          - unique
+          - not_null
+      - name: ACCOUNT_ID
+        tests:
+          - not_null
+      - name: PAYMENT_STATUS
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['COMPLETED', 'PENDING', 'FAILED']

@@ -43,36 +43,43 @@ def run():
     pg_cur = pg.cursor()
     sf_cur = sf.cursor()
 
-    for pg_table, sf_table in TABLES.items():
-        pg_cur.execute(f"SELECT * FROM {pg_table}")
-        rows = pg_cur.fetchall()
-        logger.info("%s: %d rows fetched from Postgres", pg_table, len(rows))
+    try:
+        for pg_table, sf_table in TABLES.items():
+            pg_cur.execute(f"SELECT * FROM {pg_table}")
+            rows = pg_cur.fetchall()
+            logger.info("%s: %d rows fetched from Postgres", pg_table, len(rows))
 
-        sf_cur.execute(f"TRUNCATE TABLE AFFIDAVIT_POC.RAW.{sf_table}")
+            sf_cur.execute(f"TRUNCATE TABLE AFFIDAVIT_POC.RAW.{sf_table}")
 
-        if rows:
-            rows_with_ts = [row + (loaded_at,) for row in rows]
-            placeholders = ",".join(["%s"] * (len(rows[0]) + 1))
-            sf_cur.executemany(
-                f"INSERT INTO AFFIDAVIT_POC.RAW.{sf_table} VALUES ({placeholders})",
-                rows_with_ts,
-            )
+            if rows:
+                rows_with_ts = [row + (loaded_at,) for row in rows]
+                placeholders = ",".join(["%s"] * (len(rows[0]) + 1))
+                sf_cur.executemany(
+                    f"INSERT INTO AFFIDAVIT_POC.RAW.{sf_table} VALUES ({placeholders})",
+                    rows_with_ts,
+                )
 
-        pg_count = len(rows)
-        sf_cur.execute(f"SELECT COUNT(*) FROM AFFIDAVIT_POC.RAW.{sf_table}")
-        sf_count = sf_cur.fetchone()[0]
-        if pg_count != sf_count:
-            raise ValueError(
-                f"Row count mismatch for {sf_table}: pg={pg_count}, sf={sf_count}"
-            )
-        logger.info("%s: %d rows loaded and verified", sf_table, sf_count)
+            sf_cur.execute(f"SELECT COUNT(*) FROM AFFIDAVIT_POC.RAW.{sf_table}")
+            sf_count = sf_cur.fetchone()[0]
+            if len(rows) != sf_count:
+                raise ValueError(
+                    f"Row count mismatch for {sf_table}: pg={len(rows)}, sf={sf_count}"
+                )
+            logger.info("%s: %d rows loaded and verified", sf_table, sf_count)
 
-    sf.commit()
-    pg_cur.close()
-    sf_cur.close()
-    pg.close()
-    sf.close()
-    logger.info("Ingestion complete. loaded_at=%s", loaded_at.isoformat())
+        sf.commit()
+        logger.info("Ingestion complete. loaded_at=%s", loaded_at.isoformat())
+
+    except Exception as e:
+        logger.error("Ingestion failed, rolling back Snowflake transaction: %s", str(e))
+        sf.rollback()
+        raise
+
+    finally:
+        pg_cur.close()
+        sf_cur.close()
+        pg.close()
+        sf.close()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

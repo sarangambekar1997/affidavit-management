@@ -1,6 +1,6 @@
 # Affidavit Management Data Platform
 
-A end-to-end data engineering pipeline that identifies affidavit candidates from a source transactional database, transforming and validating the data through a multi-layer Snowflake warehouse orchestrated by Apache Airflow.
+An end-to-end data engineering pipeline that identifies affidavit candidates from a source transactional database, transforming and validating the data through a multi-layer Snowflake warehouse orchestrated by Apache Airflow.
 
 ## Architecture
 
@@ -10,6 +10,7 @@ A end-to-end data engineering pipeline that identifies affidavit candidates from
 │  (Docker container) │  customers · accounts · legal_cases · payments
 └──────────┬──────────┘
            │ Python ingestion (ingest.py)
+           │ truncate + load · LOADED_AT timestamp · row count validation
            ▼
 ┌─────────────────────┐
 │   Snowflake RAW     │  Raw tables, schema-on-read
@@ -18,14 +19,15 @@ A end-to-end data engineering pipeline that identifies affidavit candidates from
            │ dbt run
            ▼
 ┌─────────────────────┐
-│  Snowflake STAGING  │  Cleaned, typed, normalised
+│  Snowflake STAGING  │  Views — cleaned, typed, normalised
 │   .STAGING          │  stg_customers · stg_accounts · stg_legal_cases · stg_payments
 └──────────┬──────────┘
            │ dbt run
            ▼
 ┌─────────────────────┐
 │   Snowflake MART    │  Business-logic layer
-│   .MART             │  affidavit_candidates
+│   .MART             │  affidavit_candidates (table)
+│                     │  fct_payments (incremental)
 └─────────────────────┘
 
 Orchestration: Apache Airflow (daily @ 06:00 UTC)
@@ -50,11 +52,11 @@ An account qualifies as an affidavit candidate when all three conditions are met
 |---|---|
 | Source database | PostgreSQL 13 (Docker) |
 | Data warehouse | Snowflake (XSMALL warehouse, auto-suspend 60s) |
-| Transformation | dbt-core 1.12.3 + dbt-snowflake 1.10.8 |
+| Transformation | dbt-core 1.12.3 + dbt-snowflake 1.10.8 + dbt_utils 1.4.1 |
 | Orchestration | Apache Airflow 2.9.1 (Docker, LocalExecutor) |
 | Ingestion | Python 3.12 + snowflake-connector-python + psycopg2 |
 | Infrastructure | Terraform + Snowflake-Labs provider ~0.87 |
-| Containerisation | Docker Compose |
+| Containerisation | Docker Compose (custom Airflow image via Dockerfile) |
 
 ## Project Structure
 
@@ -63,7 +65,7 @@ affidavit-management/
 ├── affidavit_dbt/                  # dbt project
 │   ├── models/
 │   │   ├── staging/
-│   │   │   ├── sources.yml         # RAW table source definitions
+│   │   │   ├── sources.yml         # RAW source definitions + freshness config
 │   │   │   ├── schema.yml          # staging model tests
 │   │   │   ├── stg_customers.sql
 │   │   │   ├── stg_accounts.sql
@@ -71,24 +73,29 @@ affidavit-management/
 │   │   │   └── stg_payments.sql
 │   │   └── mart/
 │   │       ├── schema.yml          # mart model tests
-│   │       └── affidavit_candidates.sql
+│   │       ├── affidavit_candidates.sql
+│   │       └── fct_payments.sql    # incremental payments fact table
 │   ├── macros/
-│   │   └── generate_schema_name.sql  # custom schema routing
+│   │   └── generate_schema_name.sql
+│   ├── packages.yml                # dbt_utils dependency
 │   └── dbt_project.yml
 │
 ├── airflow/                        # Airflow Docker setup
+│   ├── Dockerfile                  # custom image with baked-in dependencies
 │   ├── dags/
-│   │   ├── affidavit_dbt_dag.py   # main DAG definition
-│   │   └── ingest.py              # Postgres → Snowflake ingestion
+│   │   ├── affidavit_dbt_dag.py
+│   │   └── ingest.py
 │   ├── init_sql/
-│   │   └── 01_seed.sql            # source database seed data
+│   │   └── 01_seed.sql
 │   └── docker-compose.yaml
 │
-└── terraform/                      # Infrastructure as Code
-    ├── main.tf                     # Snowflake resources
-    ├── variables.tf
-    ├── outputs.tf
-    └── terraform.tfvars            # credentials (gitignored)
+├── terraform/                      # Infrastructure as Code
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── terraform.tfvars.example
+│
+└── requirements.txt                # local development dependencies
 ```
 
 ## Prerequisites
@@ -128,17 +135,25 @@ affidavit_dbt:
       schema: RAW
 ```
 
-### 3. Start Airflow + Source Postgres
+### 3. Install Python dependencies
+
+```bash
+pip install -r requirements.txt
+cd affidavit_dbt && dbt deps   # installs dbt_utils
+```
+
+### 4. Build and start Airflow + Source Postgres
 
 ```bash
 cd airflow
+docker compose build            # bakes requirements into the image
 docker compose up airflow-init
 docker compose up -d
 ```
 
 Airflow UI: http://localhost:8081 (user: `airflow` / pass: `airflow`)
 
-### 4. Run the Pipeline
+### 5. Run the Pipeline
 
 Trigger the `affidavit_dbt_pipeline` DAG from the Airflow UI, or:
 
@@ -146,13 +161,14 @@ Trigger the `affidavit_dbt_pipeline` DAG from the Airflow UI, or:
 docker compose exec airflow-scheduler airflow dags trigger affidavit_dbt_pipeline
 ```
 
-### 5. Run dbt Locally
+### 6. Run dbt Locally
 
 ```bash
 cd affidavit_dbt
-dbt run
-dbt test
-dbt docs serve    # opens lineage graph at localhost:8080
+dbt run                  # runs all models
+dbt test                 # runs all schema tests
+dbt source freshness     # checks RAW table freshness against 25h warn / 49h error thresholds
+dbt docs serve           # lineage graph at localhost:8080
 ```
 
 ## Data Model
@@ -161,18 +177,23 @@ dbt docs serve    # opens lineage graph at localhost:8080
 
 | Table | Key columns |
 |---|---|
-| `CUSTOMERS` | customer_id, customer_name, state, email, created_date |
-| `ACCOUNTS` | account_id, customer_id, original_creditor, balance, account_status, account_open_date |
-| `LEGAL_CASES` | case_id, account_id, case_type, case_status, court_state, filing_date |
-| `PAYMENTS` | payment_id, account_id, payment_date, payment_amount, payment_status |
+| `CUSTOMERS` | customer_id, customer_name, state, email, created_date, **loaded_at** |
+| `ACCOUNTS` | account_id, customer_id, original_creditor, balance, account_status, account_open_date, **loaded_at** |
+| `LEGAL_CASES` | case_id, account_id, case_type, case_status, court_state, filing_date, **loaded_at** |
+| `PAYMENTS` | payment_id, account_id, payment_date, payment_amount, payment_status, **loaded_at** |
 
-### STAGING Layer (cleaned, typed)
+`loaded_at` is stamped by `ingest.py` at the start of each run and enables source freshness monitoring.
 
-One model per RAW table. Transformations applied: `TRIM()`, `UPPER()` on status/state columns, `LOWER()` on emails.
+### STAGING Layer (views — cleaned, typed)
+
+One view per RAW table. Transformations: `TRIM()`, `UPPER()` on status/state columns, `LOWER()` on emails.
 
 ### MART Layer (business logic)
 
-**`AFFIDAVIT_CANDIDATES`** — joins accounts + legal cases + customers, filtered by the affidavit rule. Each row represents one account eligible for affidavit processing.
+| Model | Materialization | Description |
+|---|---|---|
+| `affidavit_candidates` | Table | Accounts eligible for affidavit processing (ACTIVE + balance > $1k + OPEN case) |
+| `fct_payments` | Incremental (merge) | Payment fact table — merges only new records each run using `LOADED_AT` as watermark |
 
 ## dbt Tests
 
@@ -187,3 +208,27 @@ One model per RAW table. Transformations applied: `TRIM()`, `UPPER()` on status/
 | affidavit_candidates | unique, not_null | ACCOUNT_ID |
 | affidavit_candidates | accepted_values (ACTIVE only) | ACCOUNT_STATUS |
 | affidavit_candidates | accepted_values (OPEN only) | CASE_STATUS |
+| fct_payments | unique, not_null | PAYMENT_ID |
+| fct_payments | not_null | ACCOUNT_ID |
+| fct_payments | accepted_values (COMPLETED/PENDING/FAILED) | PAYMENT_STATUS |
+
+## Source Freshness
+
+dbt monitors the `LOADED_AT` column on all RAW tables and warns/errors if data is stale:
+
+| Threshold | Behaviour |
+|---|---|
+| > 25 hours since last load | `WARN` |
+| > 49 hours since last load | `ERROR` |
+
+Run `dbt source freshness` at any time to check current status.
+
+## Ingestion Details
+
+`ingest.py` runs as the first Airflow task on each DAG execution:
+
+- Connects to the source Postgres container
+- For each table: fetches all rows, truncates the Snowflake RAW table, loads rows with a `LOADED_AT` timestamp
+- Validates row counts between source and destination — raises an exception on mismatch
+- Rolls back the entire Snowflake transaction if any table fails, preventing partial state
+- All operations are logged at `INFO`/`ERROR` level and captured by Airflow task logs
