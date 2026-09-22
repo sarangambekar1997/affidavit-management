@@ -1,6 +1,11 @@
+import logging
+from datetime import datetime, timezone
+
 import psycopg2
 import snowflake.connector
 import yaml
+
+logger = logging.getLogger(__name__)
 
 TABLES = {
     "customers":   "CUSTOMERS",
@@ -32,6 +37,7 @@ def get_pg_conn():
     )
 
 def run():
+    loaded_at = datetime.now(timezone.utc)
     pg = get_pg_conn()
     sf = get_sf_conn()
     pg_cur = pg.cursor()
@@ -40,22 +46,34 @@ def run():
     for pg_table, sf_table in TABLES.items():
         pg_cur.execute(f"SELECT * FROM {pg_table}")
         rows = pg_cur.fetchall()
-        print(f"{pg_table}: {len(rows)} rows fetched from Postgres")
+        logger.info("%s: %d rows fetched from Postgres", pg_table, len(rows))
+
         sf_cur.execute(f"TRUNCATE TABLE AFFIDAVIT_POC.RAW.{sf_table}")
+
         if rows:
-            placeholders = ",".join(["%s"] * len(rows[0]))
+            rows_with_ts = [row + (loaded_at,) for row in rows]
+            placeholders = ",".join(["%s"] * (len(rows[0]) + 1))
             sf_cur.executemany(
                 f"INSERT INTO AFFIDAVIT_POC.RAW.{sf_table} VALUES ({placeholders})",
-                rows
+                rows_with_ts,
             )
-        print(f"{sf_table}: {len(rows)} rows loaded into Snowflake RAW")
+
+        pg_count = len(rows)
+        sf_cur.execute(f"SELECT COUNT(*) FROM AFFIDAVIT_POC.RAW.{sf_table}")
+        sf_count = sf_cur.fetchone()[0]
+        if pg_count != sf_count:
+            raise ValueError(
+                f"Row count mismatch for {sf_table}: pg={pg_count}, sf={sf_count}"
+            )
+        logger.info("%s: %d rows loaded and verified", sf_table, sf_count)
 
     sf.commit()
     pg_cur.close()
     sf_cur.close()
     pg.close()
     sf.close()
-    print("Ingestion complete")
+    logger.info("Ingestion complete. loaded_at=%s", loaded_at.isoformat())
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     run()
